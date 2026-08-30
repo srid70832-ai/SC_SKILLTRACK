@@ -95,7 +95,7 @@ export const StorageService = {
       rollNumber: data.rollNumber || data.registerNumber,
       studentName: data.studentName,
       department: data.department || 'AI&DS',
-      year: data.year || 'I',
+      year: data.year || 'II',
       section: data.section || 'A',
       phoneNumber: data.phoneNumber || '',
       email: data.email || '',

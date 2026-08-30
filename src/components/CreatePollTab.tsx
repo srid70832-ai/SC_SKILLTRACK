@@ -143,7 +143,7 @@ export default function CreatePollTab({ onPollCreated }: CreatePollTabProps) {
   const [options, setOptions] = useState<string[]>(['0', '1', '2', '3', '4', '5+']);
   const [deadline, setDeadline] = useState('Today 10:00 PM');
   const [targetDepartment, setTargetDepartment] = useState('AI&DS');
-  const [targetYear, setTargetYear] = useState('I');
+  const [targetYear, setTargetYear] = useState('II');
   const [targetSection, setTargetSection] = useState('A');
   const [type, setType] = useState<'Single' | 'Multiple'>('Single');
 

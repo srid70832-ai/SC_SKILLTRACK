@@ -21,7 +21,7 @@ export default function DirectPollView({ pollId, onBackToLogin }: DirectPollView
   // Custom manual fields if not in database
   const [manualName, setManualName] = useState('');
   const [manualDept, setManualDept] = useState('AI&DS');
-  const [manualYear, setManualYear] = useState('I');
+  const [manualYear, setManualYear] = useState('II');
   const [manualSection, setManualSection] = useState('A');
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState('');

@@ -289,7 +289,7 @@ const seedInitialData = (): DbSchema => {
       registerNumber: item.registerNumber,
       studentName: item.studentName,
       department: "AI&DS",
-      year: "I",
+      year: "II",
       section: "A",
       phoneNumber: "+9198" + (7600000 + idx * 123),
       email: item.registerNumber.toLowerCase() + "@sctech.edu",
@@ -315,7 +315,22 @@ const seedInitialData = (): DbSchema => {
     }
   ];
 
-  const poll_responses: PollResponse[] = [];
+  const poll_responses: PollResponse[] = [
+    {
+      id: `${defaultPollId}_25BAD055`,
+      pollId: defaultPollId,
+      studentRollNumber: "25BAD055",
+      selectedOptions: ["2"],
+      respondedAt: "2026-08-05T10:00:00.000Z"
+    },
+    {
+      id: `${defaultPollId}_25BAD143`,
+      pollId: defaultPollId,
+      studentRollNumber: "25BAD143",
+      selectedOptions: ["0"],
+      respondedAt: "2026-08-14T10:00:00.000Z"
+    }
+  ];
 
   const users: Array<{ 
     username: string; 
