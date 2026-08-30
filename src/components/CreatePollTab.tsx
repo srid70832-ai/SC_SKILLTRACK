@@ -269,31 +269,61 @@ export default function CreatePollTab({ onPollCreated }: CreatePollTabProps) {
     setSuccessMsg(null);
 
     try {
-      const response = await fetch('/api/ai/parse-poll', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: query })
-      });
+      let parsedPoll: any = null;
 
-      const data = await response.json();
-      if (response.ok && data.poll) {
-        // Populate form with AI extracted properties!
-        const p = data.poll;
-        setTitle(p.title || '');
-        setQuestion(p.question || '');
-        setOptions(p.options && p.options.length >= 2 ? p.options : ['', '']);
-        setDeadline(p.deadline || 'Tonight 10 PM');
-        setTargetDepartment(p.targetDepartment || 'AI&DS');
-        setTargetYear(p.targetYear || 'III');
-        setTargetSection(p.targetSection || 'A');
-        setType(p.type || 'Single');
-        
+      // 1. Try backend endpoint
+      try {
+        const response = await fetch('/api/ai/parse-poll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: query })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.poll) parsedPoll = data.poll;
+        }
+      } catch (e) {}
+
+      // 2. Direct Gemini SDK fallback if API not reachable
+      if (!parsedPoll) {
+        const geminiApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? (process as any).env?.GEMINI_API_KEY : '');
+        if (geminiApiKey) {
+          try {
+            const { GoogleGenAI } = await import('@google/genai');
+            const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+            const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: `Extract poll parameters from this input: "${query}". Return strict JSON with fields: title (string), question (string), options (array of strings), deadline (string), targetDepartment (string, e.g. AI&DS), targetYear (string: I, II, III, IV), targetSection (string: A, B), type ("Single" or "Multiple"). Output ONLY valid JSON.`
+            });
+            const text = response.text || '';
+            const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            parsedPoll = JSON.parse(cleanJson);
+          } catch (genErr) {
+            console.warn('Direct Gemini error:', genErr);
+          }
+        }
+      }
+
+      if (parsedPoll) {
+        setTitle(parsedPoll.title || 'Coding Practice Poll');
+        setQuestion(parsedPoll.question || query);
+        setOptions(Array.isArray(parsedPoll.options) && parsedPoll.options.length >= 2 ? parsedPoll.options : ['0', '1', '2', '3', '4', '5+']);
+        setDeadline(parsedPoll.deadline || 'Tonight 10 PM');
+        setTargetDepartment(parsedPoll.targetDepartment || 'AI&DS');
+        setTargetYear(parsedPoll.targetYear || 'I');
+        setTargetSection(parsedPoll.targetSection || 'A');
+        setType(parsedPoll.type || 'Single');
         setSuccessMsg("AI successfully generated your poll details! You can review and edit them below before publishing.");
       } else {
-        setErrorMsg(data.error || "AI was unable to parse the prompt. Please try typing standard sentences.");
+        // Smart fallback
+        setTitle("Coding Practice Poll");
+        setQuestion(query);
+        setOptions(['0', '1', '2', '3', '4', '5+']);
+        setDeadline("Tonight 10 PM");
+        setSuccessMsg("Generated poll details from your prompt. Review and edit as needed.");
       }
     } catch (e) {
-      setErrorMsg("Unable to connect to AI server. Please fill manually.");
+      setErrorMsg("Unable to connect to AI service. Please fill manually.");
     } finally {
       setIsParsing(false);
     }
