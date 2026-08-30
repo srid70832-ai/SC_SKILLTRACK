@@ -264,6 +264,9 @@ export default function ActivePollsTab() {
       // API trigger
       fetch(`/api/polls/${pollId}`, { method: 'DELETE' }).catch(() => {});
       showToast("Poll deleted successfully.");
+    } catch (e) {
+      console.error("Error deleting poll:", e);
+    }
   };
 
   const handleSendReminder = () => {
