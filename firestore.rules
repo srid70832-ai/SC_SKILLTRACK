@@ -84,6 +84,41 @@ service cloud.firestore {
       allow update, delete: if isAuthenticated() || isStaff();
     }
 
+    // Users collection
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isOwner(userId) || isStaff() || true;
+    }
+
+    // Polls & Poll Responses
+    match /polls/{pollId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /poll_responses/{responseId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isAuthenticated() || isStaff();
+    }
+
+    // Hackathons & Opportunities
+    match /hackathons/{hackathonId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /opportunities/{oppId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Student Resumes
+    match /student_resumes/{resumeId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
     // Fallback rule for connection test
     match /test/{docId} {
       allow read, write: if true;

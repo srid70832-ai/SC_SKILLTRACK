@@ -99,7 +99,25 @@ const getGeminiClient = () => {
   });
 };
 
-const DB_FILE = path.join(process.cwd(), "db.json");
+const getDbFilePath = (): string => {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const tmpFile = path.join('/tmp', 'db.json');
+    if (!fs.existsSync(tmpFile)) {
+      try {
+        const rootDb = path.join(process.cwd(), 'db.json');
+        if (fs.existsSync(rootDb)) {
+          fs.copyFileSync(rootDb, tmpFile);
+        }
+      } catch (e) {
+        console.warn('Could not copy db.json to /tmp:', e);
+      }
+    }
+    return tmpFile;
+  }
+  return path.join(process.cwd(), 'db.json');
+};
+
+const DB_FILE = getDbFilePath();
 
 // Define schema interfaces
 interface Student {
@@ -901,19 +919,67 @@ const getDb = (): DbSchema => {
     }
 
     if (dirty) {
-      fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2));
+      try {
+        const filePath = getDbFilePath();
+        fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2));
+      } catch (writeErr) {
+        console.warn("[DB] Could not write dirty state to file:", writeErr);
+      }
     }
     return parsed;
   } catch (e) {
     console.error("Error reading database file, reseeding...", e);
     const defaultData = seedInitialData();
-    fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2));
+    try {
+      const filePath = getDbFilePath();
+      fs.writeFileSync(filePath, JSON.stringify(defaultData, null, 2));
+    } catch (writeErr) {
+      console.warn("[DB] Could not seed database file:", writeErr);
+    }
     return defaultData;
   }
 };
 
+// Asynchronous Firebase Firestore Synchronization Helper
+async function syncDbToFirestore(db: DbSchema) {
+  try {
+    const { FirebaseDbService } = await import('./src/lib/firebase');
+    
+    // Sync polls
+    if (db.polls && Array.isArray(db.polls)) {
+      for (const p of db.polls) {
+        await FirebaseDbService.savePoll(p);
+      }
+    }
+
+    // Sync poll responses
+    if (db.poll_responses && Array.isArray(db.poll_responses)) {
+      for (const r of db.poll_responses) {
+        await FirebaseDbService.savePollResponse(r);
+      }
+    }
+
+    // Sync students (batch top students)
+    if (db.students && Array.isArray(db.students)) {
+      for (const s of db.students.slice(0, 40)) {
+        await FirebaseDbService.saveStudent(s);
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Firebase Sync Warning]', err.message);
+  }
+}
+
 const writeDb = (db: DbSchema) => {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  try {
+    const filePath = getDbFilePath();
+    fs.writeFileSync(filePath, JSON.stringify(db, null, 2));
+  } catch (e) {
+    console.warn("[DB] Memory fallback mode (write failed):", e);
+  }
+
+  // Non-blocking background sync to Firebase Firestore
+  syncDbToFirestore(db).catch(() => {});
 };
 
 function getStudentProfileLinks(db: DbSchema, identifier: string) {
@@ -8988,6 +9054,35 @@ app.post("/api/hackathon/ai-stream", async (req, res) => {
   res.end();
 });
 
+// ============================================================================
+// FIREBASE DATABASE ENDPOINTS
+// ============================================================================
+app.get("/api/firebase/status", async (req, res) => {
+  try {
+    const { testFirebaseConnection, firebaseConfig } = await import('./src/lib/firebase');
+    const connected = await testFirebaseConnection();
+    res.json({
+      connected,
+      projectId: firebaseConfig.projectId,
+      authDomain: firebaseConfig.authDomain,
+      firestoreDatabaseId: firebaseConfig.firestoreDatabaseId,
+      status: connected ? "active" : "offline"
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, connected: false });
+  }
+});
+
+app.post("/api/firebase/sync", async (req, res) => {
+  try {
+    const db = getDb();
+    await syncDbToFirestore(db);
+    res.json({ success: true, message: "Firebase Firestore database synchronized successfully." });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 404 handler for unmatched API routes to ensure JSON response instead of HTML fallback
 app.all("/api/*", (req, res) => {
   res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
@@ -9043,4 +9138,10 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the standalone HTTP listener when not in serverless environments (e.g. Vercel)
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.NODE_ENV !== 'test') {
+  startServer();
+}
+
+export default app;
+export { app };
