@@ -774,168 +774,67 @@ function performDatabaseCleanupMigration(db: DbSchema): boolean {
   return dirty;
 }
 
+// Global In-Memory Database Cache for ultra-fast and serverless execution
+let globalInMemoryDb: DbSchema | null = null;
+
 // Database state management helper
 const getDb = (): DbSchema => {
-  if (!fs.existsSync(DB_FILE)) {
-    const defaultData = seedInitialData();
-    performDatabaseCleanupMigration(defaultData);
-    fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2));
-    return defaultData;
+  if (globalInMemoryDb) {
+    return globalInMemoryDb;
   }
+
   try {
-    const data = fs.readFileSync(DB_FILE, "utf-8");
-    const parsed = JSON.parse(data);
-    let dirty = false;
-    const initial = seedInitialData();
-    if (!parsed.students || !Array.isArray(parsed.students)) {
-      parsed.students = initial.students;
-      dirty = true;
-    } else {
-      initial.students.forEach((initStudent: any) => {
-        const exists = parsed.students.some((s: any) =>
-          s.registerNumber && s.registerNumber.toUpperCase() === initStudent.registerNumber.toUpperCase()
-        );
-        if (!exists) {
-          parsed.students.push(initStudent);
-          dirty = true;
-        }
-      });
-    }
-    if (!parsed.hackathons || parsed.hackathons.length === 0) { parsed.hackathons = initial.hackathons; dirty = true; }
-    if (!parsed.hackathon_registrations) { parsed.hackathon_registrations = initial.hackathon_registrations; dirty = true; }
-    if (!parsed.hackathon_teams) { parsed.hackathon_teams = initial.hackathon_teams; dirty = true; }
-    if (!parsed.hackathon_certificates) { parsed.hackathon_certificates = initial.hackathon_certificates; dirty = true; }
-    if (!parsed.student_profiles) { parsed.student_profiles = {}; dirty = true; }
-    if (!parsed.code_analytics_students || Object.keys(parsed.code_analytics_students).length === 0) { 
-      parsed.code_analytics_students = initial.code_analytics_students; 
-      dirty = true; 
-    }
-    if (!parsed.code_analytics_feed) { parsed.code_analytics_feed = initial.code_analytics_feed; dirty = true; }
-    if (!parsed.code_analytics_contests) { parsed.code_analytics_contests = initial.code_analytics_contests; dirty = true; }
-    if (!parsed.code_analytics_notifications) { parsed.code_analytics_notifications = []; dirty = true; }
-
-    if (!parsed.sidh_config) {
-      parsed.sidh_config = {
-        apiUrl: process.env.SIDH_API_URL || '',
-        apiKeyConfigured: !!process.env.SIDH_API_KEY,
-        clientIdConfigured: !!process.env.SIDH_CLIENT_ID,
-        status: process.env.SIDH_API_URL ? 'Configured' : 'Not Configured',
-        autoSyncSchedule: 'Daily',
-        autoSyncEnabled: !!process.env.SIDH_API_URL,
-        lastSyncTime: null,
-        lastSyncStatus: 'Not Configured',
-        connectionMessage: process.env.SIDH_API_URL ? 'SIDH API connection configured via environment variables.' : 'SIDH connection is not configured.'
-      };
-      dirty = true;
-    }
-    if (!parsed.sidh_courses) { parsed.sidh_courses = []; dirty = true; }
-    if (!parsed.sidh_sync_logs) { parsed.sidh_sync_logs = []; dirty = true; }
-    if (!parsed.sidh_verification_logs) { parsed.sidh_verification_logs = []; dirty = true; }
-    if (!parsed.sidh_imports) { parsed.sidh_imports = []; dirty = true; }
-    if (!parsed.sidh_proofs) { parsed.sidh_proofs = []; dirty = true; }
-    if (!parsed.sidh_verification_issues) { parsed.sidh_verification_issues = []; dirty = true; }
-    if (!parsed.sidh_evidence) { parsed.sidh_evidence = []; dirty = true; }
-    if (!parsed.sidh_activity_timeline) { parsed.sidh_activity_timeline = []; dirty = true; }
-    if (!parsed.sidh_verification_requests) { parsed.sidh_verification_requests = []; dirty = true; }
-    if (!parsed.sidh_staff_reviews) { parsed.sidh_staff_reviews = []; dirty = true; }
-    if (!parsed.sidh_evidence_settings) { 
-      parsed.sidh_evidence_settings = { freshnessDaysThreshold: 14, recentlySyncedDaysThreshold: 7, strictMasterMatching: true }; 
-      dirty = true; 
-    }
-    if (!parsed.student_resumes) { parsed.student_resumes = {}; dirty = true; }
-
-    const migrationDirty = performDatabaseCleanupMigration(parsed);
-    if (migrationDirty) dirty = true;
-
-    // Database validation and password normalization
-    if (parsed.users && Array.isArray(parsed.users)) {
-      const defaultStudentHash = hashPassword("KIT@2026");
-
-      // Ensure all students in db.students have a user account
-      if (parsed.students && Array.isArray(parsed.students)) {
-        parsed.students.forEach((s: any) => {
-          let user = parsed.users.find((u: any) => 
-            u.username.toLowerCase() === s.registerNumber.toLowerCase() ||
-            u.username.toLowerCase() === s.rollNumber.toLowerCase() ||
-            (u.studentRollNumber && u.studentRollNumber.toLowerCase() === s.rollNumber.toLowerCase())
-          );
-
-          if (!user) {
-            user = {
-              username: s.registerNumber,
-              passwordHash: defaultStudentHash,
-              role: "Student",
-              studentRollNumber: s.rollNumber,
-              passwordChanged: false,
-              isLocked: false,
-              failedAttempts: 0
-            };
-            parsed.users.push(user);
-            dirty = true;
-          }
-        });
-      }
-
-      // Ensure default staff accounts exist
-      const defaultStaffAccounts = [
-        { username: "padmapriya", passwordHash: hashPassword("Padmapriya@123"), role: "Staff", name: "Padmapriya", passwordChanged: true },
-        { username: "prema", passwordHash: hashPassword("Prema@123"), role: "Staff", name: "Prema", passwordChanged: true },
-        { username: "staff", passwordHash: hashPassword("staff123"), role: "Staff", name: "Staff Admin", passwordChanged: true },
-        { username: "gowtham", passwordHash: hashPassword("Gowtham@2026"), role: "Staff", name: "Gowtham", passwordChanged: true }
-      ];
-
-      defaultStaffAccounts.forEach(st => {
-        const exists = parsed.users.find((u: any) => u.username.toLowerCase() === st.username.toLowerCase());
-        if (!exists) {
-          parsed.users.push(st);
-          dirty = true;
-        }
-      });
-
-      parsed.users.forEach((u: any) => {
-        // Enforce staff roles and passwordChanged flag
-        if (['padmapriya', 'prema', 'staff', 'gowtham'].includes(u.username.toLowerCase())) {
-          u.role = 'Staff';
-          u.passwordChanged = true;
-          if (!u.name) {
-            u.name = u.username.charAt(0).toUpperCase() + u.username.slice(1);
-          }
-        }
-
-        // Enforce default KIT@2026 hash for students with passwordChanged !== true
-        if (u.role === 'Student' && u.passwordChanged !== true) {
-          u.passwordChanged = false;
-          if (u.passwordHash !== defaultStudentHash) {
-            u.passwordHash = defaultStudentHash;
-            dirty = true;
-          }
-        } else if (u.passwordHash && u.passwordHash.length !== 64) {
-          u.passwordHash = hashPassword(u.passwordHash);
-          dirty = true;
-        }
-      });
-    }
-
-    if (dirty) {
-      try {
-        const filePath = getDbFilePath();
-        fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2));
-      } catch (writeErr) {
-        console.warn("[DB] Could not write dirty state to file:", writeErr);
+    const filePath = getDbFilePath();
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, "utf-8");
+      if (data && data.trim().length > 10) {
+        globalInMemoryDb = JSON.parse(data);
       }
     }
-    return parsed;
   } catch (e) {
-    console.error("Error reading database file, reseeding...", e);
-    const defaultData = seedInitialData();
-    try {
-      const filePath = getDbFilePath();
-      fs.writeFileSync(filePath, JSON.stringify(defaultData, null, 2));
-    } catch (writeErr) {
-      console.warn("[DB] Could not seed database file:", writeErr);
-    }
-    return defaultData;
+    console.warn("[DB READ NOTICE]", e);
   }
+
+  if (!globalInMemoryDb) {
+    globalInMemoryDb = seedInitialData();
+  }
+
+  const initial = seedInitialData();
+  if (!globalInMemoryDb.students || !Array.isArray(globalInMemoryDb.students)) {
+    globalInMemoryDb.students = initial.students;
+  }
+  if (!globalInMemoryDb.polls) globalInMemoryDb.polls = initial.polls;
+  if (!globalInMemoryDb.poll_responses) globalInMemoryDb.poll_responses = [];
+  if (!globalInMemoryDb.hackathons) globalInMemoryDb.hackathons = initial.hackathons;
+  if (!globalInMemoryDb.hackathon_registrations) globalInMemoryDb.hackathon_registrations = [];
+  if (!globalInMemoryDb.hackathon_teams) globalInMemoryDb.hackathon_teams = [];
+  if (!globalInMemoryDb.hackathon_certificates) globalInMemoryDb.hackathon_certificates = [];
+  if (!globalInMemoryDb.student_profiles) globalInMemoryDb.student_profiles = {};
+  if (!globalInMemoryDb.code_analytics_students) globalInMemoryDb.code_analytics_students = initial.code_analytics_students;
+  if (!globalInMemoryDb.code_analytics_feed) globalInMemoryDb.code_analytics_feed = initial.code_analytics_feed;
+  if (!globalInMemoryDb.code_analytics_contests) globalInMemoryDb.code_analytics_contests = initial.code_analytics_contests;
+  if (!globalInMemoryDb.code_analytics_notifications) globalInMemoryDb.code_analytics_notifications = [];
+  if (!globalInMemoryDb.opportunities) globalInMemoryDb.opportunities = [];
+  if (!globalInMemoryDb.coding_profiles) globalInMemoryDb.coding_profiles = {};
+  if (!globalInMemoryDb.opportunity_registrations) globalInMemoryDb.opportunity_registrations = [];
+  if (!globalInMemoryDb.staff_notifications) globalInMemoryDb.staff_notifications = [];
+  if (!globalInMemoryDb.sidh_courses) globalInMemoryDb.sidh_courses = [];
+  if (!globalInMemoryDb.sidh_sync_logs) globalInMemoryDb.sidh_sync_logs = [];
+  if (!globalInMemoryDb.sidh_verification_logs) globalInMemoryDb.sidh_verification_logs = [];
+  if (!globalInMemoryDb.sidh_imports) globalInMemoryDb.sidh_imports = [];
+  if (!globalInMemoryDb.sidh_proofs) globalInMemoryDb.sidh_proofs = [];
+  if (!globalInMemoryDb.sidh_verification_issues) globalInMemoryDb.sidh_verification_issues = [];
+  if (!globalInMemoryDb.sidh_evidence) globalInMemoryDb.sidh_evidence = [];
+  if (!globalInMemoryDb.sidh_activity_timeline) globalInMemoryDb.sidh_activity_timeline = [];
+  if (!globalInMemoryDb.sidh_verification_requests) globalInMemoryDb.sidh_verification_requests = [];
+  if (!globalInMemoryDb.sidh_staff_reviews) globalInMemoryDb.sidh_staff_reviews = [];
+  if (!globalInMemoryDb.sidh_evidence_settings) {
+    globalInMemoryDb.sidh_evidence_settings = { freshnessDaysThreshold: 14, recentlySyncedDaysThreshold: 7, strictMasterMatching: true };
+  }
+  if (!globalInMemoryDb.student_resumes) globalInMemoryDb.student_resumes = {};
+
+  performDatabaseCleanupMigration(globalInMemoryDb);
+  return globalInMemoryDb;
 };
 
 // Asynchronous Firebase Firestore Synchronization Helper
@@ -969,11 +868,12 @@ async function syncDbToFirestore(db: DbSchema) {
 }
 
 const writeDb = (db: DbSchema) => {
+  globalInMemoryDb = db;
   try {
     const filePath = getDbFilePath();
     fs.writeFileSync(filePath, JSON.stringify(db, null, 2));
   } catch (e) {
-    console.warn("[DB] Memory fallback mode (write failed):", e);
+    console.warn("[DB] Memory fallback mode (write file failed):", e);
   }
 
   // Non-blocking background sync to Firebase Firestore
@@ -1812,8 +1712,10 @@ function autoCloseExpiredPolls() {
   }
 }
 
-// Auto close check interval every 30 seconds
-setInterval(autoCloseExpiredPolls, 30000);
+// Auto close check interval every 30 seconds (standalone only)
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  setInterval(autoCloseExpiredPolls, 30000);
+}
 
 // 2. Poll API - Create, View, Vote
 app.get("/api/polls", (req, res) => {
@@ -3039,12 +2941,14 @@ app.post("/api/opportunities/sync", async (req, res) => {
   }
 });
 
-// Auto-sync every 6 hours
-setInterval(() => {
-  syncHireTodayOpportunities().catch(err => {
-    console.error("[AUTO SYNC 6H HIRE TODAY ERROR]", err.message);
-  });
-}, 6 * 3600 * 1000);
+// Auto-sync every 6 hours (standalone only)
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  setInterval(() => {
+    syncHireTodayOpportunities().catch(err => {
+      console.error("[AUTO SYNC 6H HIRE TODAY ERROR]", err.message);
+    });
+  }, 6 * 3600 * 1000);
+}
 
 // 2. Create hackathon (Staff Only)
 app.post("/api/hackathons", (req, res) => {

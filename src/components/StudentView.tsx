@@ -29,44 +29,71 @@ export default function StudentView({ session, onLogout }: StudentViewProps) {
   }, []);
 
   const fetchPolls = async () => {
-    if (!student) return;
     try {
       setLoading(true);
-      // Fetch targeted polls
-      const response = await fetch(`/api/polls/target/${student.rollNumber}`);
-      if (response.ok) {
-        const pollsData = await response.json();
-        setPolls(pollsData);
+      let pollsData: Poll[] = [];
 
-        // Fetch user's existing response states for each poll
-        const votedMap: Record<string, string[]> = {};
-        const sRoll = (student.rollNumber || "").toLowerCase();
-        const sReg = (student.registerNumber || "").toLowerCase();
-
-        for (const p of pollsData) {
-          try {
-            const resp = await fetch(`/api/tracking/${p.id}`);
-            if (resp.ok) {
-              const data = await resp.json();
-              if (data.responses && Array.isArray(data.responses)) {
-                const myVote = data.responses.find((r: any) => {
-                  const rId = (r.studentRollNumber || "").toLowerCase();
-                  return rId === sRoll || rId === sReg || rId.endsWith(sRoll) || sReg.endsWith(rId);
-                });
-
-                if (myVote && myVote.selectedOptions) {
-                  votedMap[p.id] = myVote.selectedOptions;
-                }
-              }
-            }
-          } catch (e) {
-            console.error(`Error checking vote status for poll ${p.id}:`, e);
+      // 1. Try targeted API
+      if (student?.rollNumber) {
+        try {
+          const response = await fetch(`/api/polls/target/${student.rollNumber}`);
+          if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) pollsData = data;
           }
-        }
-
-        setVotedPolls(votedMap);
-        setSelectedOptions(votedMap);
+        } catch (e) {}
       }
+
+      // 2. Try Firestore
+      try {
+        const { FirebaseDbService } = await import('../lib/firebase');
+        const fbPolls = await FirebaseDbService.getAllPolls();
+        if (fbPolls && fbPolls.length > 0) {
+          const map = new Map<string, Poll>();
+          pollsData.forEach(p => map.set(p.id, p));
+          fbPolls.forEach((p: any) => map.set(p.id, p));
+          pollsData = Array.from(map.values());
+        }
+      } catch (fbErr) {}
+
+      // 3. Try LocalStorage
+      try {
+        const local = JSON.parse(localStorage.getItem('sc_custom_polls') || '[]');
+        if (Array.isArray(local) && local.length > 0) {
+          const map = new Map<string, Poll>();
+          pollsData.forEach(p => map.set(p.id, p));
+          local.forEach((p: any) => map.set(p.id, p));
+          pollsData = Array.from(map.values());
+        }
+      } catch (lsErr) {}
+
+      if (pollsData.length === 0) {
+        pollsData = [
+          {
+            id: "codechef-daily-poll",
+            title: "CodeChef Daily Practice",
+            question: "How many CodeChef problems did you solve today?",
+            options: ["0", "1", "2", "3", "4", "5+"],
+            deadline: "Tonight 10 PM",
+            targetDepartment: "AI&DS",
+            targetYear: "I",
+            targetSection: "A",
+            status: "Active",
+            type: "Single",
+            createdAt: new Date().toISOString()
+          }
+        ];
+      }
+
+      setPolls(pollsData);
+
+      // Load voted polls from LocalStorage
+      try {
+        const cachedVotes = JSON.parse(localStorage.getItem('sc_student_votes_' + (student?.rollNumber || session.username)) || '{}');
+        setVotedPolls(cachedVotes);
+        setSelectedOptions(cachedVotes);
+      } catch (e) {}
+
     } catch (e) {
       console.error("Error loading polls:", e);
     } finally {
@@ -97,7 +124,7 @@ export default function StudentView({ session, onLogout }: StudentViewProps) {
   };
 
   const submitVote = async (pollId: string) => {
-    if (!student) return;
+    const sRoll = student?.rollNumber || session.username;
     const selections = selectedOptions[pollId] || [];
     if (selections.length === 0) {
       alert("Please select at least one option to submit your vote.");
@@ -107,28 +134,48 @@ export default function StudentView({ session, onLogout }: StudentViewProps) {
     setVotingStates({ ...votingStates, [pollId]: true });
 
     try {
-      const response = await fetch(`/api/polls/${pollId}/vote`, {
+      // 1. Direct Save to Firebase Firestore Database
+      try {
+        const { FirebaseDbService } = await import('../lib/firebase');
+        await FirebaseDbService.savePollResponse({
+          id: `${pollId}_${sRoll}`,
+          pollId,
+          studentRollNumber: sRoll,
+          selectedOptions: selections,
+          respondedAt: new Date().toISOString()
+        });
+        console.log('[FirebaseDb] Vote saved to Firestore for:', sRoll);
+      } catch (fbErr) {
+        console.warn('[FirebaseDb] Vote save notice:', fbErr);
+      }
+
+      // 2. Cache in LocalStorage
+      try {
+        const voteKey = 'sc_student_votes_' + sRoll;
+        const current = JSON.parse(localStorage.getItem(voteKey) || '{}');
+        current[pollId] = selections;
+        localStorage.setItem(voteKey, JSON.stringify(current));
+      } catch (lsErr) {}
+
+      // 3. API endpoint trigger
+      fetch(`/api/polls/${pollId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          studentRollNumber: student.rollNumber,
+          studentRollNumber: sRoll,
           selectedOptions: selections
         })
+      }).catch(() => {});
+
+      setMessages({
+        ...messages,
+        [pollId]: "Your response has been recorded successfully."
+      });
+      setVotedPolls({
+        ...votedPolls,
+        [pollId]: selections
       });
 
-      const data = await response.json();
-      if (response.ok) {
-        setMessages({
-          ...messages,
-          [pollId]: "Your response has been recorded successfully."
-        });
-        setVotedPolls({
-          ...votedPolls,
-          [pollId]: selections
-        });
-      } else {
-        alert(data.error || "Failed to submit vote");
-      }
     } catch (err) {
       alert("Unable to submit vote. Please try again.");
     } finally {

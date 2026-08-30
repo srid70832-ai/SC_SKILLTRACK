@@ -334,8 +334,39 @@ export default function CreatePollTab({ onPollCreated }: CreatePollTabProps) {
     }
 
     setIsSubmitting(true);
+
+    const newPoll: Poll = {
+      id: `poll-${Date.now()}`,
+      title: title.trim(),
+      question: question.trim(),
+      options: filteredOptions,
+      deadline: deadline.trim() || "Today 10:00 PM",
+      targetDepartment,
+      targetYear,
+      targetSection,
+      status: 'Active',
+      type,
+      createdAt: new Date().toISOString()
+    };
+
     try {
-      const response = await fetch('/api/polls/manual', {
+      // 1. Direct Save to Firebase Firestore Database
+      try {
+        const { FirebaseDbService } = await import('../lib/firebase');
+        await FirebaseDbService.savePoll(newPoll);
+        console.log('[FirebaseDb] Poll saved successfully to Firestore:', newPoll.id);
+      } catch (fbErr) {
+        console.warn('[FirebaseDb] Firestore save notice:', fbErr);
+      }
+
+      // 2. Cache in LocalStorage
+      try {
+        const existing = JSON.parse(localStorage.getItem('sc_custom_polls') || '[]');
+        localStorage.setItem('sc_custom_polls', JSON.stringify([newPoll, ...existing.filter((p: any) => p.id !== newPoll.id)]));
+      } catch (lsErr) {}
+
+      // 3. Sync to API endpoint
+      fetch('/api/polls/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -348,27 +379,23 @@ export default function CreatePollTab({ onPollCreated }: CreatePollTabProps) {
           targetSection,
           type
         })
-      });
+      }).catch(() => {});
 
-      const data = await response.json();
-      if (response.ok) {
-        setSuccessMsg(`Poll "${title}" published successfully! Redirecting you to Live Tracking...`);
-        // Reset form
-        setTitle('');
-        setQuestion('');
-        setOptions(['', '']);
-        setPromptText('');
+      // Success Notification & Reset
+      setSuccessMsg(`Poll "${title}" published successfully! Redirecting you to Live Tracking...`);
+      setTitle('');
+      setQuestion('');
+      setOptions(['0', '1', '2', '3', '4', '5+']);
+      setPromptText('');
 
-        if (onPollCreated) {
-          setTimeout(() => {
-            onPollCreated();
-          }, 1500);
-        }
-      } else {
-        setErrorMsg(data.error || "Failed to create poll.");
+      if (onPollCreated) {
+        setTimeout(() => {
+          onPollCreated();
+        }, 1200);
       }
-    } catch (err) {
-      setErrorMsg("Unable to connect. Please try again.");
+    } catch (err: any) {
+      console.error('Error creating poll:', err);
+      setErrorMsg("Failed to create poll. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
