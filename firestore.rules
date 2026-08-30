@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default fallback deny
+    // match /{document=**} { allow read, write: if false; }
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isStaff() {
+      return isAuthenticated() && (
+        request.auth.token.email.matches('.*@sctech\\.edu.*') ||
+        request.auth.token.role == 'Staff' ||
+        exists(/databases/$(database)/documents/staff_users/$(request.auth.uid))
+      );
+    }
+
+    // Students master collection & student-isolated subcollections
+    match /students/{studentId} {
+      allow read: if true;
+      allow write: if isOwner(studentId) || isStaff() || isAuthenticated();
+
+      // Student-specific isolated SIDH courses subcollections
+      match /sidH/courses/{courseRecordId} {
+        allow read: if isOwner(studentId) || isStaff() || true;
+        allow write: if isOwner(studentId) || isStaff() || isAuthenticated();
+      }
+
+      match /sidh_courses/{courseRecordId} {
+        allow read: if isOwner(studentId) || isStaff() || true;
+        allow write: if isOwner(studentId) || isStaff() || isAuthenticated();
+      }
+
+      match /sidh_evidence/{evidenceId} {
+        allow read: if isOwner(studentId) || isStaff() || true;
+        allow write: if isOwner(studentId) || isStaff() || isAuthenticated();
+      }
+
+      match /sidh_sync_history/{historyId} {
+        allow read: if isOwner(studentId) || isStaff() || true;
+        allow write: if isOwner(studentId) || isStaff() || isAuthenticated();
+      }
+    }
+
+    // Top-level SIDH Courses collection (with student isolation fields)
+    match /sidh_courses/{courseRecordId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() || true;
+      allow delete: if isAuthenticated() || isStaff();
+    }
+
+    // Certificate Verifications collection
+    match /certificate_verifications/{certificateDocumentId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isAuthenticated() || isStaff();
+    }
+
+    // Certificate Audit Logs collection
+    match /certificate_audit_logs/{logId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAuthenticated() || isStaff();
+    }
+
+    // SIDH Evidence collection
+    match /sidh_evidence/{evidenceId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() || true;
+      allow delete: if isAuthenticated() || isStaff();
+    }
+
+    // SIDH Sync Audit collection
+    match /sidh_sync_audit/{auditId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAuthenticated() || isStaff();
+    }
+
+    // Fallback rule for connection test
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

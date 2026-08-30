@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SC SkillTrack - SIDH Sync</title>
+  <style>
+    body {
+      width: 340px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-b: 1px solid #1e293b;
+      margin-bottom: 12px;
+    }
+    .brand {
+      font-weight: 900;
+      font-size: 14px;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-badge {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .status-badge.waiting {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+    .box {
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .box-title {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .row-label {
+      color: #94a3b8;
+    }
+    .row-value {
+      font-weight: 700;
+      color: #f1f5f9;
+    }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #2563eb, #4f46e5);
+      color: white;
+      font-weight: 800;
+      font-size: 13px;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: opacity 0.2s;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: #334155;
+      margin-top: 6px;
+    }
+    .footer-note {
+      font-size: 10px;
+      color: #64748b;
+      text-align: center;
+      margin-top: 10px;
+      line-height: 1.4;
+    }
+    .step-log {
+      font-size: 11px;
+      color: #a5f3fc;
+      background: #083344;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #155e75;
+      margin-bottom: 10px;
+      text-align: center;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      🎓 SC SkillTrack
+    </div>
+    <div id="statusBadge" class="status-badge waiting">● Checking SIDH Page</div>
+  </div>
+
+  <div id="stepLog" class="step-log">
+    Waiting for SIDH page...
+  </div>
+
+  <div class="box">
+    <div class="box-title">SIDH DATA DETECTED</div>
+    <div class="row">
+      <span class="row-label">Student Name:</span>
+      <span id="studentName" class="row-value">Detecting...</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Student ID:</span>
+      <span id="studentId" class="row-value">Detecting...</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Courses Found:</span>
+      <span id="coursesFound" class="row-value">0</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Completed:</span>
+      <span id="completedCourses" class="row-value">0</span>
+    </div>
+    <div class="row">
+      <span class="row-label">In Progress:</span>
+      <span id="inProgressCourses" class="row-value">0</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Certificates:</span>
+      <span id="certificatesFound" class="row-value">0</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Source:</span>
+      <span class="row-value" style="color: #38bdf8;">SIDH Browser Page</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Verification:</span>
+      <span class="row-value" style="color: #fbbf24;">BROWSER-SOURCED</span>
+    </div>
+  </div>
+
+  <button id="syncBtn" class="btn" disabled>Sync Current SIDH Profile</button>
+  <button id="cancelBtn" class="btn btn-secondary">Cancel</button>
+
+  <div class="footer-note">
+    Data is read only from the currently visible SIDH webpage in your browser tab.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

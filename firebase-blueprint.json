@@ -1,0 +1,195 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Student master record for verification and tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "registerNumber": { "type": "string" },
+        "rollNumber": { "type": "string" },
+        "department": { "type": "string" },
+        "year": { "type": "string" },
+        "section": { "type": "string" },
+        "mentorName": { "type": "string" },
+        "sidhProfileUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "registerNumber"]
+    },
+    "SIDHCourse": {
+      "title": "SIDHCourse",
+      "description": "Verified Skill India Digital Hub course record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firebaseUid": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "registerNumber": { "type": "string" },
+        "rollNumber": { "type": "string" },
+        "department": { "type": "string" },
+        "year": { "type": "string" },
+        "section": { "type": "string" },
+        "mentorName": { "type": "string" },
+        "courseName": { "type": "string" },
+        "courseId": { "type": "string" },
+        "provider": { "type": "string" },
+        "courseCategory": { "type": "string" },
+        "registrationDate": { "type": "string" },
+        "enrollmentDate": { "type": "string" },
+        "completionDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["COMPLETED", "IN PROGRESS", "ENROLLED"] },
+        "progress": { "type": "string" },
+        "certificateStatus": { "type": "string", "enum": ["AVAILABLE", "NOT AVAILABLE"] },
+        "certificateId": { "type": "string" },
+        "certificateUrl": { "type": "string" },
+        "sidhId": { "type": "string" },
+        "source": { "type": "string" },
+        "sourceUrl": { "type": "string" },
+        "syncMethod": { "type": "string" },
+        "evidence": { "type": "object" },
+        "verificationStatus": { "type": "string" },
+        "verificationReason": { "type": "string" },
+        "capturedAt": { "type": "string" },
+        "lastVerifiedAt": { "type": "string" },
+        "verifiedAt": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentName", "registerNumber", "courseName", "status", "source"]
+    },
+    "CertificateVerification": {
+      "title": "CertificateVerification",
+      "description": "Verified certificate record analyzed by Gemini API with evidence-based extraction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "fileName": { "type": "string" },
+        "storagePath": { "type": "string" },
+        "fileType": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "uploadedAt": { "type": "string", "format": "date-time" },
+        "analysisStatus": { "type": "string", "enum": ["UPLOADED", "ANALYZING", "ANALYZED", "REVIEW_REQUIRED", "VERIFIED", "REJECTED", "FAILED"] },
+        "verificationStatus": { "type": "string" },
+        "officialVerificationStatus": { "type": "string" },
+        "extractedData": { "type": "object" },
+        "confidence": { "type": "number" },
+        "validationResults": { "type": "object" },
+        "studentMatchStatus": { "type": "string", "enum": ["MATCHED", "MISMATCH", "NOT_AVAILABLE"] },
+        "courseMatchStatus": { "type": "string", "enum": ["MATCHED", "MISMATCH", "NOT_AVAILABLE", "REVIEW_REQUIRED"] },
+        "analyzedAt": { "type": "string", "format": "date-time" },
+        "reviewedBy": { "type": "string" },
+        "reviewNotes": { "type": "string" },
+        "source": { "type": "string" }
+      },
+      "required": ["id", "studentId", "fileName", "storagePath", "uploadedAt", "analysisStatus"]
+    },
+    "CertificateAuditLog": {
+      "title": "CertificateAuditLog",
+      "description": "Audit trail log for certificate analysis, verification, approval, rejection, or staff corrections",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "certificateId": { "type": "string" },
+        "action": { "type": "string", "enum": ["UPLOADED", "ANALYSIS_STARTED", "ANALYSIS_COMPLETED", "VERIFICATION_REQUIRED", "APPROVED", "REJECTED", "STAFF_CORRECTED", "DELETED"] },
+        "actorId": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "previousStatus": { "type": "string" },
+        "newStatus": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["certificateId", "action", "actorId", "timestamp"]
+    },
+    "SIDHEvidence": {
+      "title": "SIDHEvidence",
+      "description": "Verified proof evidence record for SIDH certificates and browser sync",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "student_id": { "type": "string" },
+        "registerNumber": { "type": "string" },
+        "student_name": { "type": "string" },
+        "source": { "type": "string" },
+        "status": { "type": "string" },
+        "confidence": { "type": "number" },
+        "original_filename": { "type": "string" },
+        "courses_count": { "type": "number" },
+        "completed_count": { "type": "number" },
+        "certificates_count": { "type": "number" },
+        "review_notes": { "type": "string" },
+        "verified_by": { "type": "string" },
+        "verified_at": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["registerNumber", "source", "status", "created_at"]
+    },
+    "SIDHSyncAudit": {
+      "title": "SIDHSyncAudit",
+      "description": "Audit trail log of all SIDH sync sessions",
+      "type": "object",
+      "properties": {
+        "syncId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "source": { "type": "string" },
+        "syncMethod": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "triggeredBy": { "type": "string" },
+        "studentsChecked": { "type": "number" },
+        "studentsVerified": { "type": "number" },
+        "studentsNotVerified": { "type": "number" },
+        "coursesFound": { "type": "number" },
+        "newCourses": { "type": "number" },
+        "completedCourses": { "type": "number" },
+        "duplicatesIgnored": { "type": "number" },
+        "verificationFailures": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["syncId", "source", "startedAt", "completedAt", "status"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Collection of student profiles"
+    },
+    "/students/{studentId}/sidH/courses/{courseRecordId}": {
+      "schema": "SIDHCourse",
+      "description": "Student-isolated collection of verified SIDH course records scoped to student UID"
+    },
+    "/students/{studentId}/sidh_courses/{courseRecordId}": {
+      "schema": "SIDHCourse",
+      "description": "Student-isolated collection of verified SIDH courses"
+    },
+    "/students/{studentId}/sidh_evidence/{evidenceId}": {
+      "schema": "SIDHEvidence",
+      "description": "Student-isolated collection of verified SIDH evidence files and sync logs"
+    },
+    "/sidh_courses/{courseRecordId}": {
+      "schema": "SIDHCourse",
+      "description": "Collection of verified SIDH course records"
+    },
+    "/certificate_verifications/{certificateDocumentId}": {
+      "schema": "CertificateVerification",
+      "description": "Collection of certificate verification metadata and extracted evidence"
+    },
+    "/certificate_audit_logs/{logId}": {
+      "schema": "CertificateAuditLog",
+      "description": "Audit trail log of all certificate verification actions"
+    },
+    "/sidh_evidence/{evidenceId}": {
+      "schema": "SIDHEvidence",
+      "description": "Collection of verified SIDH evidence files and browser sync logs"
+    },
+    "/sidh_sync_audit/{auditId}": {
+      "schema": "SIDHSyncAudit",
+      "description": "Audit trail logs for all synchronization operations"
+    }
+  }
+}

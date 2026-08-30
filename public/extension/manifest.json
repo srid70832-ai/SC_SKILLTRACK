@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "SC SkillTrack AI - SIDH Course Sync",
+  "version": "2.0.0",
+  "description": "Official secure browser sync extension for Skill India Digital Hub (SIDH) course tracking in SC SkillTrack AI.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "sidePanel",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://skillindiadigital.gov.in/*",
+    "https://www.skillindiadigital.gov.in/*"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open SIDH Sync Side Panel",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://skillindiadigital.gov.in/*",
+        "https://www.skillindiadigital.gov.in/*"
+      ],
+      "js": ["content.js"]
+    }
+  ]
+}

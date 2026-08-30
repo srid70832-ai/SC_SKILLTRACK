@@ -1,0 +1,10 @@
+{
+  "name": "SC SkillTrack AI",
+  "description": "Voice to Poll in Seconds - Quick and easy polling system with voice input, live responder tracking, and PDF/Excel reports.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
