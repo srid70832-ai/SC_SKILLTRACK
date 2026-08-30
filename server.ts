@@ -2,10 +2,8 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import * as dotenv from "dotenv";
-import { PDFParse } from "pdf-parse";
 import { generateInitialCodeAnalyticsData } from "./src/lib/codeAnalyticsSeed";
 import { 
   runFullCodeAnalyticsSync, 
@@ -5703,12 +5701,13 @@ app.post("/api/sidh/import", (req, res) => {
 // Helper function to extract selectable text from PDF buffer safely
 async function extractPdfTextSafe(buffer: Buffer): Promise<string> {
   try {
-    const fn: any = PDFParse;
+    let pdfModule: any = null;
+    try {
+      pdfModule = await import("pdf-parse");
+    } catch {}
+    const fn = pdfModule?.PDFParse || pdfModule?.default || pdfModule;
     if (typeof fn === 'function') {
       const res = await fn(buffer);
-      if (res && res.text) return res.text.trim();
-    } else if (fn && typeof fn.default === 'function') {
-      const res = await fn.default(buffer);
       if (res && res.text) return res.text.trim();
     }
   } catch (e) {
@@ -9093,11 +9092,16 @@ app.all("/api/*", (req, res) => {
 // ============================================================================
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.warn("[Vite dev server notice]", e);
+    }
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
