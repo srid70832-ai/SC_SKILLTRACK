@@ -122,6 +122,67 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     }
   };
 
+interface SafeApiResponse<T = any> {
+  ok: boolean;
+  status: number;
+  data: T | null;
+  errorMessage: string | null;
+}
+
+async function safeApiCall<T = any>(url: string, options: RequestInit): Promise<SafeApiResponse<T>> {
+  try {
+    const response = await fetch(url, options);
+    let data: T | null = null;
+    let rawText = '';
+
+    try {
+      rawText = await response.text();
+      if (rawText && rawText.trim()) {
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = null;
+        }
+      }
+    } catch {
+      rawText = '';
+    }
+
+    let errorMessage: string | null = null;
+    if (!response.ok) {
+      if (data && typeof data === 'object' && ('error' in data || 'message' in data)) {
+        errorMessage = (data as any).error || (data as any).message;
+      } else if (response.status === 401) {
+        errorMessage = "Invalid username or password. Please verify your credentials.";
+      } else if (response.status === 403) {
+        errorMessage = "Access denied. Your account may be locked or disabled.";
+      } else if (response.status === 429) {
+        errorMessage = "Too many login attempts. Please try again later.";
+      } else if (response.status >= 500) {
+        errorMessage = "Authentication service temporarily unavailable. Please try again.";
+      } else if (response.status === 400) {
+        errorMessage = "Invalid login request. Please check your credentials.";
+      } else {
+        errorMessage = `Login failed (${response.status}). Please try again.`;
+      }
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+      errorMessage
+    };
+  } catch (netErr) {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      errorMessage: "Unable to connect to authentication server. Please check your network connection."
+    };
+  }
+}
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -167,131 +228,29 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     const cleanUsername = username.trim();
     const cleanPassword = password.trim();
 
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: cleanUsername,
-          password: password,
-          portalType: loginType
-        })
-      });
+    const result = await safeApiCall('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: cleanUsername,
+        password: cleanPassword,
+        portalType: loginType
+      })
+    });
 
-      let data: any = null;
-      try {
-        data = await response.json();
-      } catch (parseErr) {
-        // In case server returns HTML error page (e.g. 500)
-        console.warn('API returned non-JSON response:', parseErr);
-      }
-
-      if (response.ok && data?.user) {
-        setLoginState('success');
-        triggerConfetti();
-        setTimeout(() => {
-          onLoginSuccess(data.user);
-        }, 1200);
-        return;
-      }
-
-      if (data?.error && response.status < 500) {
-        setError(data.error || "Login failed. Please check your credentials.");
-        setLoginState('idle');
-        setIsLoading(false);
-        triggerErrorShake();
-        return;
-      }
-
-      // If server returned 500 or non-JSON, fallback to verified local/pre-seeded credentials
-      const staffList: Record<string, { pass: string; name: string }> = {
-        'prema': { pass: 'Prema@123', name: 'Mrs. V. Prema' },
-        'padmapriya': { pass: 'Padmapriya@123', name: 'Mrs. B. Padmapriya' },
-        'staff': { pass: 'staff123', name: 'Staff Admin' },
-        'gowtham': { pass: 'Gowtham@2026', name: 'Gowtham' }
-      };
-
-      const userLower = cleanUsername.toLowerCase();
-
-      if (loginType === 'staff') {
-        const staffAccount = staffList[userLower];
-        if (staffAccount && (cleanPassword === staffAccount.pass || cleanPassword.toLowerCase() === staffAccount.pass.toLowerCase())) {
-          const fallbackUser: UserSession = {
-            username: userLower,
-            name: staffAccount.name,
-            role: 'Staff',
-            passwordChanged: true
-          };
-          setLoginState('success');
-          triggerConfetti();
-          setTimeout(() => onLoginSuccess(fallbackUser), 1000);
-          return;
-        }
-      } else {
-        // Student fallback
-        if (cleanPassword.toUpperCase() === 'KIT@2026' || cleanPassword === 'student123') {
-          const fallbackUser: UserSession = {
-            username: cleanUsername.toUpperCase(),
-            name: cleanUsername.toUpperCase(),
-            role: 'Student',
-            passwordChanged: false,
-            profileCompleted: false
-          };
-          setLoginState('success');
-          triggerConfetti();
-          setTimeout(() => onLoginSuccess(fallbackUser), 1000);
-          return;
-        }
-      }
-
-      setError(data?.error || "Invalid username or password. Please verify your credentials.");
-      setLoginState('idle');
-      setIsLoading(false);
-      triggerErrorShake();
-
-    } catch (err) {
-      console.error('Login connection error:', err);
-
-      // Offline / Serverless cold start fallback check
-      const staffList: Record<string, { pass: string; name: string }> = {
-        'prema': { pass: 'Prema@123', name: 'Mrs. V. Prema' },
-        'padmapriya': { pass: 'Padmapriya@123', name: 'Mrs. B. Padmapriya' },
-        'staff': { pass: 'staff123', name: 'Staff Admin' },
-        'gowtham': { pass: 'Gowtham@2026', name: 'Gowtham' }
-      };
-
-      const userLower = cleanUsername.toLowerCase();
-
-      if (loginType === 'staff' && staffList[userLower] && (cleanPassword === staffList[userLower].pass || cleanPassword.toLowerCase() === staffList[userLower].pass.toLowerCase())) {
-        const fallbackUser: UserSession = {
-          username: userLower,
-          name: staffList[userLower].name,
-          role: 'Staff',
-          passwordChanged: true
-        };
-        setLoginState('success');
-        triggerConfetti();
-        setTimeout(() => onLoginSuccess(fallbackUser), 1000);
-        return;
-      } else if (loginType === 'student' && (cleanPassword.toUpperCase() === 'KIT@2026' || cleanPassword === 'student123')) {
-        const fallbackUser: UserSession = {
-          username: cleanUsername.toUpperCase(),
-          name: cleanUsername.toUpperCase(),
-          role: 'Student',
-          passwordChanged: false,
-          profileCompleted: false
-        };
-        setLoginState('success');
-        triggerConfetti();
-        setTimeout(() => onLoginSuccess(fallbackUser), 1000);
-        return;
-      }
-
-      setError("Unable to connect to authentication server. Please check your internet connection.");
-      setLoginState('idle');
-      setIsLoading(false);
-      triggerErrorShake();
+    if (result.ok && result.data?.user) {
+      setLoginState('success');
+      triggerConfetti();
+      setTimeout(() => {
+        onLoginSuccess(result.data.user);
+      }, 1200);
+      return;
     }
+
+    setError(result.errorMessage || "Invalid username or password. Please verify your credentials.");
+    setLoginState('idle');
+    setIsLoading(false);
+    triggerErrorShake();
   };
 
   const resetStaffForgotModal = () => {
@@ -315,34 +274,29 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
     setStaffForgotLoading(true);
 
-    try {
-      const res = await fetch('/api/auth/verify-staff-reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: staffForgotIdentifier.trim() })
+    const result = await safeApiCall('/api/auth/verify-staff-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: staffForgotIdentifier.trim() })
+    });
+
+    setStaffForgotLoading(false);
+
+    if (!result.ok || !result.data) {
+      setStaffForgotMessage({ type: 'error', text: result.errorMessage || 'Staff account not found.' });
+    } else {
+      const data = result.data;
+      setVerifiedStaff({
+        username: data.username,
+        name: data.name,
+        token: data.token,
+        emailConfigured: data.emailConfigured
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setStaffForgotMessage({ type: 'error', text: data.error || 'Staff account not found.' });
-      } else {
-        setVerifiedStaff({
-          username: data.username,
-          name: data.name,
-          token: data.token,
-          emailConfigured: data.emailConfigured
-        });
-        setStaffForgotStep('reset');
-        setStaffForgotMessage({
-          type: 'info',
-          text: 'Password recovery service is not configured yet. Administrator-controlled password reset option enabled.'
-        });
-      }
-    } catch (err) {
-      setStaffForgotMessage({ type: 'error', text: 'Server error. Please try again later.' });
-    } finally {
-      setStaffForgotLoading(false);
+      setStaffForgotStep('reset');
+      setStaffForgotMessage({
+        type: 'info',
+        text: 'Password recovery service is not configured yet. Administrator-controlled password reset option enabled.'
+      });
     }
   };
 
@@ -377,32 +331,26 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
     setStaffForgotLoading(true);
 
-    try {
-      const res = await fetch('/api/auth/staff-reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: verifiedStaff.username,
-          token: verifiedStaff.token,
-          newPassword: staffResetNewPassword.trim()
-        })
-      });
+    const result = await safeApiCall('/api/auth/staff-reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: verifiedStaff.username,
+        token: verifiedStaff.token,
+        newPassword: staffResetNewPassword.trim()
+      })
+    });
 
-      const data = await res.json();
+    setStaffForgotLoading(false);
 
-      if (!res.ok) {
-        setStaffForgotMessage({ type: 'error', text: data.error || 'Failed to reset staff password.' });
-      } else {
-        setStaffForgotStep('done');
-        setStaffForgotMessage({ type: 'success', text: data.message });
-        setUsername(verifiedStaff.username);
-        setPassword('');
-        triggerConfetti();
-      }
-    } catch (err) {
-      setStaffForgotMessage({ type: 'error', text: 'Server error. Please try again later.' });
-    } finally {
-      setStaffForgotLoading(false);
+    if (!result.ok || !result.data) {
+      setStaffForgotMessage({ type: 'error', text: result.errorMessage || 'Failed to reset staff password.' });
+    } else {
+      setStaffForgotStep('done');
+      setStaffForgotMessage({ type: 'success', text: result.data.message || 'Password reset successfully.' });
+      setUsername(verifiedStaff.username);
+      setPassword('');
+      triggerConfetti();
     }
   };
 
@@ -427,32 +375,27 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
     setForgotLoading(true);
 
-    try {
-      const res = await fetch('/api/auth/verify-student-reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: forgotRegisterNo.trim() })
+    const result = await safeApiCall('/api/auth/verify-student-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: forgotRegisterNo.trim() })
+    });
+
+    setForgotLoading(false);
+
+    if (!result.ok || !result.data) {
+      setForgotMessage({ type: 'error', text: result.errorMessage || 'Student account not found.' });
+    } else {
+      const data = result.data;
+      setVerifiedStudent({
+        registerNumber: data.registerNumber,
+        studentName: data.studentName,
+        department: data.department,
+        year: data.year,
+        section: data.section
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setForgotMessage({ type: 'error', text: data.error || 'Student account not found.' });
-      } else {
-        setVerifiedStudent({
-          registerNumber: data.registerNumber,
-          studentName: data.studentName,
-          department: data.department,
-          year: data.year,
-          section: data.section
-        });
-        setForgotStep('reset');
-        setForgotMessage(null);
-      }
-    } catch (err) {
-      setForgotMessage({ type: 'error', text: 'Server error. Please try again later.' });
-    } finally {
-      setForgotLoading(false);
+      setForgotStep('reset');
+      setForgotMessage(null);
     }
   };
 
@@ -474,31 +417,25 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
     setForgotLoading(true);
 
-    try {
-      const res = await fetch('/api/auth/self-reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          identifier: verifiedStudent.registerNumber,
-          newPassword: resetNewPassword.trim()
-        })
-      });
+    const result = await safeApiCall('/api/auth/self-reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        identifier: verifiedStudent.registerNumber,
+        newPassword: resetNewPassword.trim()
+      })
+    });
 
-      const data = await res.json();
+    setForgotLoading(false);
 
-      if (!res.ok) {
-        setForgotMessage({ type: 'error', text: data.error || 'Failed to reset password.' });
-      } else {
-        setForgotStep('done');
-        setForgotMessage({ type: 'success', text: data.message });
-        setUsername(verifiedStudent.registerNumber);
-        setPassword('');
-        triggerConfetti();
-      }
-    } catch (err) {
-      setForgotMessage({ type: 'error', text: 'Server error. Please try again later.' });
-    } finally {
-      setForgotLoading(false);
+    if (!result.ok || !result.data) {
+      setForgotMessage({ type: 'error', text: result.errorMessage || 'Failed to reset password.' });
+    } else {
+      setForgotStep('done');
+      setForgotMessage({ type: 'success', text: result.data.message || 'Password reset successfully.' });
+      setUsername(verifiedStudent.registerNumber);
+      setPassword('');
+      triggerConfetti();
     }
   };
 

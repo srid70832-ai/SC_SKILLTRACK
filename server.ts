@@ -80,6 +80,16 @@ app.get("/health", (req, res) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Safe body fallback middleware for serverless / proxy environments
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'string') {
+    try {
+      req.body = JSON.parse(req.body);
+    } catch (e) {}
+  }
+  next();
+});
+
 // Initialize Gemini SDK with User-Agent header for telemetry
 const getGeminiClient = () => {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -896,241 +906,359 @@ const writeDb = (db: DbSchema) => {
 };
 
 function getStudentProfileLinks(db: DbSchema, identifier: string) {
-  if (!identifier) return { links: { leetcode: '', codeforces: '', codechef: '' }, isCompleted: false, regUpper: '', rollUpper: '' };
+  const defaultRes = { links: { leetcode: '', codeforces: '', codechef: '', atcoder: '', codolio: '', hackerrank: '', github: '' }, isCompleted: false, regUpper: '', rollUpper: '', student: null };
+  if (!identifier) return defaultRes;
 
-  const inputUpper = identifier.trim().toUpperCase();
-  const student = db.students?.find((s: any) => 
-    s.registerNumber.toUpperCase() === inputUpper || 
-    s.rollNumber.toUpperCase() === inputUpper
-  );
+  try {
+    const inputUpper = String(identifier).trim().toUpperCase();
+    const student = (db?.students || []).find((s: any) => 
+      s && ((s.registerNumber && String(s.registerNumber).toUpperCase() === inputUpper) || 
+            (s.rollNumber && String(s.rollNumber).toUpperCase() === inputUpper))
+    );
 
-  const regUpper = student ? student.registerNumber.toUpperCase() : inputUpper;
-  const rollUpper = student ? student.rollNumber.toUpperCase() : inputUpper;
+    const regUpper = student?.registerNumber ? String(student.registerNumber).toUpperCase() : inputUpper;
+    const rollUpper = student?.rollNumber ? String(student.rollNumber).toUpperCase() : inputUpper;
 
-  const cp = (db.coding_profiles && (db.coding_profiles[regUpper] || db.coding_profiles[rollUpper])) || null;
-  const cas = (db.code_analytics_students && (db.code_analytics_students[regUpper] || db.code_analytics_students[rollUpper])) || null;
+    const cp = (db?.coding_profiles && (db.coding_profiles[regUpper] || db.coding_profiles[rollUpper])) || null;
+    const cas = (db?.code_analytics_students && (db.code_analytics_students[regUpper] || db.code_analytics_students[rollUpper])) || null;
 
-  const userObj = db.users?.find((u: any) => 
-    u.username.toUpperCase() === regUpper || 
-    u.username.toUpperCase() === rollUpper ||
-    (u.studentRollNumber && u.studentRollNumber.toUpperCase() === rollUpper)
-  );
+    const userObj = (db?.users || []).find((u: any) => 
+      u && ((u.username && String(u.username).toUpperCase() === regUpper) || 
+            (u.username && String(u.username).toUpperCase() === rollUpper) ||
+            (u.studentRollNumber && String(u.studentRollNumber).toUpperCase() === rollUpper))
+    );
 
-  const leetcode = (cp?.leetcodeUrl || cas?.profileLinks?.leetcode || userObj?.profileLinks?.leetcode || '').trim();
-  const codeforces = (cp?.codeforcesUrl || cas?.profileLinks?.codeforces || userObj?.profileLinks?.codeforces || '').trim();
-  const codechef = (cp?.codechefUrl || cas?.profileLinks?.codechef || userObj?.profileLinks?.codechef || '').trim();
-  const atcoder = (cp?.atcoderUrl || cas?.profileLinks?.atcoder || userObj?.profileLinks?.atcoder || '').trim();
-  const codolio = (cp?.codolioUrl || cas?.profileLinks?.codolio || userObj?.profileLinks?.codolio || '').trim();
-  const hackerrank = (cp?.hackerrankUrl || cas?.profileLinks?.hackerrank || userObj?.profileLinks?.hackerrank || '').trim();
-  const github = (cp?.githubUrl || cas?.profileLinks?.github || userObj?.profileLinks?.github || '').trim();
+    const leetcode = (cp?.leetcodeUrl || cas?.profileLinks?.leetcode || userObj?.profileLinks?.leetcode || '').trim();
+    const codeforces = (cp?.codeforcesUrl || cas?.profileLinks?.codeforces || userObj?.profileLinks?.codeforces || '').trim();
+    const codechef = (cp?.codechefUrl || cas?.profileLinks?.codechef || userObj?.profileLinks?.codechef || '').trim();
+    const atcoder = (cp?.atcoderUrl || cas?.profileLinks?.atcoder || userObj?.profileLinks?.atcoder || '').trim();
+    const codolio = (cp?.codolioUrl || cas?.profileLinks?.codolio || userObj?.profileLinks?.codolio || '').trim();
+    const hackerrank = (cp?.hackerrankUrl || cas?.profileLinks?.hackerrank || userObj?.profileLinks?.hackerrank || '').trim();
+    const github = (cp?.githubUrl || cas?.profileLinks?.github || userObj?.profileLinks?.github || '').trim();
 
-  const links = {
-    leetcode,
-    codeforces,
-    codechef,
-    atcoder,
-    codolio,
-    hackerrank,
-    github
-  };
+    const links = {
+      leetcode,
+      codeforces,
+      codechef,
+      atcoder,
+      codolio,
+      hackerrank,
+      github
+    };
 
-  const isCompleted = !!(leetcode && codeforces && codechef);
+    const isCompleted = !!(leetcode && codeforces && codechef);
 
-  return { links, isCompleted, regUpper, rollUpper, student };
+    return { links, isCompleted, regUpper, rollUpper, student };
+  } catch (err) {
+    console.warn("[getStudentProfileLinks notice]", err);
+    return defaultRes;
+  }
 }
 
 // ============================================================================
 // API ROUTES
 // ============================================================================
 
-// 1. Authentication API (Staff & Student with Strict Role Isolation)
-app.post("/api/auth/login", (req, res) => {
-  const { username, password, portalType } = req.body;
-
-  if (!username || !password) {
-    console.log("[AUTH] Missing username or password");
-    return res.status(400).json({ error: "Please enter username and password" });
+// Helper function to safely extract and parse request body in any environment
+async function parseRequestBody(req: express.Request): Promise<any> {
+  // If req.body is already an object
+  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+    return req.body;
   }
 
-  const db = getDb();
-  const inputStr = username.trim().toLowerCase();
-  const isStaffPortal = portalType === 'staff';
-  const expectedRole = isStaffPortal ? 'Staff' : 'Student';
-
-  console.log(`[AUTH] Login Attempt - Username: "${username}", PortalType: "${portalType || 'student'}", ExpectedRole: "${expectedRole}"`);
-
-  if (isStaffPortal) {
-    // =========================================================
-    // STAFF PORTAL AUTHENTICATION
-    // =========================================================
-    if (!username || !username.trim()) {
-      return res.status(400).json({ error: "Please enter staff username" });
+  // If req.body is a string
+  if (typeof req.body === 'string') {
+    const trimmed = req.body.trim();
+    if (!trimmed) return {};
+    try {
+      return JSON.parse(trimmed);
+    } catch (e) {
+      throw new Error("MALFORMED_JSON");
     }
-    if (!password || !password.trim()) {
-      return res.status(400).json({ error: "Please enter staff password" });
+  }
+
+  // If req.body is a Buffer
+  if (Buffer.isBuffer(req.body)) {
+    const str = req.body.toString('utf-8').trim();
+    if (!str) return {};
+    try {
+      return JSON.parse(str);
+    } catch (e) {
+      throw new Error("MALFORMED_JSON");
     }
+  }
 
-    console.log("[AUTH] Searching Staff...");
-    const staffUser = db.users.find(u => u.role === 'Staff' && u.username.toLowerCase() === inputStr);
-
-    if (!staffUser) {
-      // Check if student is trying to access Staff Portal
-      const isStudent = db.students.find(s => 
-        s.registerNumber.toLowerCase() === inputStr || s.rollNumber.toLowerCase() === inputStr
-      ) || db.users.find(u => u.role === 'Student' && u.username.toLowerCase() === inputStr);
-
-      if (isStudent) {
-        console.log("[AUTH] Role Mismatch - Student credentials rejected on Staff Portal");
-        return res.status(400).json({ error: "This account belongs to Student Portal. Please switch to Student Login." });
-      }
-
-      console.log("[AUTH] Staff Not Found - Returning generic error");
-      return res.status(401).json({ error: "Invalid staff username or password." });
-    }
-
-    console.log(`[AUTH] Staff Found: ${staffUser.username}`);
-
-    if (staffUser.isLocked) {
-      console.log("[AUTH] Account Disabled / Locked");
-      return res.status(403).json({ error: "Account is disabled/locked. Please contact System Administrator." });
-    }
-
-    if (!verifyPassword(password, staffUser.passwordHash, staffUser.passwordChanged)) {
-      console.log("[AUTH] Password Incorrect - Returning generic error");
-      staffUser.failedAttempts = (staffUser.failedAttempts || 0) + 1;
-      writeDb(db);
-      return res.status(401).json({ error: "Invalid staff username or password." });
-    }
-
-    console.log("[AUTH] Password Match");
-    console.log("[AUTH] Role = STAFF");
-
-    if (staffUser.passwordHash !== hashPassword(password)) {
-      staffUser.passwordHash = hashPassword(password);
-    }
-    staffUser.failedAttempts = 0;
-    staffUser.lastLoginAt = new Date().toISOString();
-    writeDb(db);
-
-    const formattedStaffName = staffUser.name || (
-      staffUser.username.toLowerCase() === 'padmapriya' ? 'Padmapriya' :
-      staffUser.username.toLowerCase() === 'prema' ? 'Prema' :
-      staffUser.username.toLowerCase() === 'gowtham' ? 'Gowtham' : 'Staff Admin'
-    );
-
-    return res.json({
-      message: "Login successful",
-      user: {
-        username: staffUser.username,
-        name: formattedStaffName,
-        role: 'Staff',
-        passwordChanged: true
-      }
+  // If req stream is available and unread
+  if (typeof req.on === 'function' && !req.readableEnded) {
+    return new Promise((resolve, reject) => {
+      let data = '';
+      req.on('data', (chunk: any) => {
+        data += chunk;
+      });
+      req.on('end', () => {
+        const trimmed = data.trim();
+        if (!trimmed) return resolve({});
+        try {
+          resolve(JSON.parse(trimmed));
+        } catch (e) {
+          reject(new Error("MALFORMED_JSON"));
+        }
+      });
+      req.on('error', (err: any) => {
+        reject(err);
+      });
     });
+  }
 
-  } else {
-    // =========================================================
-    // STUDENT PORTAL AUTHENTICATION
-    // =========================================================
-    console.log("[AUTH] Searching Student...");
+  return {};
+}
 
-    // Check if staff is trying to access Student Portal
-    const isStaffUser = db.users.find(u => u.role === 'Staff' && u.username.toLowerCase() === inputStr) ||
-                        ['padmapriya', 'prema', 'staff', 'gowtham'].includes(inputStr);
+// 1. Authentication API (Staff & Student with Strict Role Isolation)
+app.all("/api/auth/login", async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
 
-    if (isStaffUser) {
-      console.log("[AUTH] Role Mismatch - Staff credentials rejected on Student Portal");
-      return res.status(400).json({ error: "This account belongs to Staff Portal. Please switch to Staff Login." });
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({
+      success: false,
+      error: "Method not allowed"
+    });
+  }
+
+  let body: any;
+  try {
+    body = await parseRequestBody(req);
+  } catch (parseErr: any) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid request body"
+    });
+  }
+
+  try {
+    const rawUsername = body?.username ?? (req.query?.username as string);
+    const rawPassword = body?.password ?? (req.query?.password as string);
+    const rawPortalType = body?.portalType ?? (req.query?.portalType as string);
+
+    if (!rawUsername || !rawPassword || !String(rawUsername).trim() || !String(rawPassword).trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Username and password are required"
+      });
     }
 
-    // Search Student table by Register Number or Roll Number
-    const student = db.students.find(s => 
-      s.registerNumber.toLowerCase() === inputStr || 
-      s.rollNumber.toLowerCase() === inputStr
-    );
+    const username = String(rawUsername).trim();
+    const password = String(rawPassword);
+    const portalType = rawPortalType ? String(rawPortalType).toLowerCase() : 'student';
 
-    let studentUser = db.users.find(u => 
-      u.role === 'Student' && 
-      (u.username.toLowerCase() === inputStr || (student && u.studentRollNumber === student.rollNumber))
-    );
+    const db = getDb();
+    const inputStr = username.toLowerCase();
+    const isStaffPortal = portalType === 'staff';
+    const expectedRole = isStaffPortal ? 'Staff' : 'Student';
 
-    if (!student && !studentUser) {
-      console.log("[AUTH] Student Not Found");
-      return res.status(404).json({ error: "Student not found with this Register Number" });
-    }
+    console.log(`[AUTH] Login Attempt - Username: "${username}", PortalType: "${portalType}", ExpectedRole: "${expectedRole}"`);
 
-    // Auto-create/restore student user in db.users if missing
-    if (!studentUser && student) {
-      console.log("[AUTH] Initializing Student User record...");
-      studentUser = {
-        username: student.registerNumber,
-        passwordHash: hashPassword("KIT@2026"),
-        role: "Student",
-        studentRollNumber: student.rollNumber,
-        passwordChanged: false,
-        isLocked: false,
-        failedAttempts: 0
-      };
-      db.users.push(studentUser);
-      writeDb(db);
-    }
+    if (isStaffPortal) {
+      // =========================================================
+      // STAFF PORTAL AUTHENTICATION
+      // =========================================================
+      console.log("[AUTH] Searching Staff...");
+      const staffUser = (db.users || []).find(u => u && u.role === 'Staff' && u.username && String(u.username).toLowerCase() === inputStr);
 
-    console.log(`[AUTH] Student Found: ${student ? student.studentName : studentUser.username} (${studentUser.username})`);
+      if (!staffUser) {
+        // Check if student is trying to access Staff Portal
+        const isStudent = (db.students || []).find(s => 
+          s && ((s.registerNumber && String(s.registerNumber).toLowerCase() === inputStr) || 
+                (s.rollNumber && String(s.rollNumber).toLowerCase() === inputStr))
+        ) || (db.users || []).find(u => u && u.role === 'Student' && u.username && String(u.username).toLowerCase() === inputStr);
 
-    // Check Account Status
-    if (studentUser.isLocked || (student && student.studentStatus === 'Inactive')) {
-      console.log("[AUTH] Inactive Account / Account Locked");
-      return res.status(403).json({ error: "Account is disabled or locked. Please contact Staff Coordinator." });
-    }
+        if (isStudent) {
+          console.log("[AUTH] Role Mismatch - Student credentials rejected on Staff Portal");
+          return res.status(400).json({
+            success: false,
+            error: "This account belongs to Student Portal. Please switch to Student Login."
+          });
+        }
 
-    // Verify Password
-    const isMatch = verifyPassword(password, studentUser.passwordHash, studentUser.passwordChanged);
-    if (!isMatch) {
-      console.log("[AUTH] Password Incorrect");
-      studentUser.failedAttempts = (studentUser.failedAttempts || 0) + 1;
-      if (studentUser.failedAttempts >= 5) {
-        studentUser.isLocked = true;
-        console.log("[AUTH] Account Locked due to 5 failed attempts");
+        console.log("[AUTH] Staff Not Found - Returning generic error");
+        return res.status(401).json({
+          success: false,
+          error: "Invalid staff username or password."
+        });
       }
+
+      console.log(`[AUTH] Staff Found: ${staffUser.username}`);
+
+      if (staffUser.isLocked) {
+        console.log("[AUTH] Account Disabled / Locked");
+        return res.status(403).json({
+          success: false,
+          error: "Account is disabled/locked. Please contact System Administrator."
+        });
+      }
+
+      if (!verifyPassword(password, staffUser.passwordHash, staffUser.passwordChanged)) {
+        console.log("[AUTH] Password Incorrect - Returning generic error");
+        staffUser.failedAttempts = (staffUser.failedAttempts || 0) + 1;
+        writeDb(db);
+        return res.status(401).json({
+          success: false,
+          error: "Invalid staff username or password."
+        });
+      }
+
+      console.log("[AUTH] Password Match");
+      console.log("[AUTH] Role = STAFF");
+
+      if (staffUser.passwordHash !== hashPassword(password)) {
+        staffUser.passwordHash = hashPassword(password);
+      }
+      staffUser.failedAttempts = 0;
+      staffUser.lastLoginAt = new Date().toISOString();
       writeDb(db);
-      return res.status(401).json({ error: "Incorrect password" });
-    }
 
-    console.log("[AUTH] Password Match");
-    console.log("[AUTH] Role = STUDENT");
+      const staffUsername = String(staffUser.username || '').toLowerCase();
+      const formattedStaffName = staffUser.name || (
+        staffUsername === 'padmapriya' ? 'Padmapriya' :
+        staffUsername === 'prema' ? 'Prema' :
+        staffUsername === 'gowtham' ? 'Gowtham' : 'Staff Admin'
+      );
 
-    // Upgrade password hash to salted sha256 if needed
-    if (studentUser.passwordHash !== hashPassword(password)) {
-      studentUser.passwordHash = hashPassword(password);
-    }
+      return res.json({
+        success: true,
+        message: "Login successful",
+        user: {
+          username: staffUser.username,
+          name: formattedStaffName,
+          role: 'Staff',
+          passwordChanged: true
+        }
+      });
 
-    studentUser.failedAttempts = 0;
-    studentUser.lastLoginAt = new Date().toISOString();
-    writeDb(db);
-
-    const isPasswordChanged = !!studentUser.passwordChanged;
-    console.log(`[AUTH] PasswordChanged = ${isPasswordChanged}`);
-
-    if (!isPasswordChanged) {
-      console.log("[AUTH] Redirect -> Change Password");
     } else {
-      console.log("[AUTH] Redirect -> Student Dashboard");
-    }
+      // =========================================================
+      // STUDENT PORTAL AUTHENTICATION
+      // =========================================================
+      console.log("[AUTH] Searching Student...");
 
-    const profileInfo = getStudentProfileLinks(db, student ? student.registerNumber : studentUser.username);
+      // Check if staff is trying to access Student Portal
+      const isStaffUser = (db.users || []).find(u => u && u.role === 'Staff' && u.username && String(u.username).toLowerCase() === inputStr) ||
+                          ['padmapriya', 'prema', 'staff', 'gowtham'].includes(inputStr);
 
-    return res.json({
-      message: "Login successful",
-      user: {
-        username: studentUser.username,
-        name: student ? student.studentName : studentUser.username,
-        role: 'Student',
-        passwordChanged: isPasswordChanged,
-        profileCompleted: profileInfo.isCompleted,
-        profileLinks: profileInfo.links,
-        studentRollNumber: student ? student.rollNumber : studentUser.studentRollNumber || studentUser.username,
-        studentDetails: student || null
+      if (isStaffUser) {
+        console.log("[AUTH] Role Mismatch - Staff credentials rejected on Student Portal");
+        return res.status(400).json({
+          success: false,
+          error: "This account belongs to Staff Portal. Please switch to Staff Login."
+        });
       }
+
+      // Search Student table by Register Number or Roll Number
+      const student = (db.students || []).find(s => 
+        s && ((s.registerNumber && String(s.registerNumber).toLowerCase() === inputStr) || 
+              (s.rollNumber && String(s.rollNumber).toLowerCase() === inputStr))
+      );
+
+      let studentUser = (db.users || []).find(u => 
+        u && u.role === 'Student' && 
+        ((u.username && String(u.username).toLowerCase() === inputStr) || 
+         (student && student.rollNumber && u.studentRollNumber && String(u.studentRollNumber).toLowerCase() === String(student.rollNumber).toLowerCase()))
+      );
+
+      if (!student && !studentUser) {
+        console.log("[AUTH] Student Not Found");
+        return res.status(404).json({
+          success: false,
+          error: "Student not found with this Register Number"
+        });
+      }
+
+      // Auto-create/restore student user in db.users if missing
+      if (!studentUser && student) {
+        console.log("[AUTH] Initializing Student User record...");
+        studentUser = {
+          username: student.registerNumber,
+          passwordHash: hashPassword("KIT@2026"),
+          role: "Student",
+          studentRollNumber: student.rollNumber,
+          passwordChanged: false,
+          isLocked: false,
+          failedAttempts: 0
+        };
+        db.users.push(studentUser);
+        writeDb(db);
+      }
+
+      console.log(`[AUTH] Student Found: ${student ? student.studentName : studentUser!.username} (${studentUser!.username})`);
+
+      // Check Account Status
+      if (studentUser!.isLocked || (student && student.studentStatus === 'Inactive')) {
+        console.log("[AUTH] Inactive Account / Account Locked");
+        return res.status(403).json({
+          success: false,
+          error: "Account is disabled or locked. Please contact Staff Coordinator."
+        });
+      }
+
+      // Verify Password
+      const isMatch = verifyPassword(password, studentUser!.passwordHash, studentUser!.passwordChanged);
+      if (!isMatch) {
+        console.log("[AUTH] Password Incorrect");
+        studentUser!.failedAttempts = (studentUser!.failedAttempts || 0) + 1;
+        if ((studentUser!.failedAttempts || 0) >= 5) {
+          studentUser!.isLocked = true;
+          console.log("[AUTH] Account Locked due to 5 failed attempts");
+        }
+        writeDb(db);
+        return res.status(401).json({
+          success: false,
+          error: "Incorrect password"
+        });
+      }
+
+      console.log("[AUTH] Password Match");
+      console.log("[AUTH] Role = STUDENT");
+
+      // Upgrade password hash to salted sha256 if needed
+      if (studentUser!.passwordHash !== hashPassword(password)) {
+        studentUser!.passwordHash = hashPassword(password);
+      }
+
+      studentUser!.failedAttempts = 0;
+      studentUser!.lastLoginAt = new Date().toISOString();
+      writeDb(db);
+
+      const isPasswordChanged = !!studentUser!.passwordChanged;
+      console.log(`[AUTH] PasswordChanged = ${isPasswordChanged}`);
+
+      if (!isPasswordChanged) {
+        console.log("[AUTH] Redirect -> Change Password");
+      } else {
+        console.log("[AUTH] Redirect -> Student Dashboard");
+      }
+
+      const profileInfo = getStudentProfileLinks(db, student ? student.registerNumber : studentUser!.username);
+
+      return res.json({
+        success: true,
+        message: "Login successful",
+        user: {
+          username: studentUser!.username,
+          name: student ? student.studentName : studentUser!.username,
+          role: 'Student',
+          passwordChanged: isPasswordChanged,
+          profileCompleted: profileInfo.isCompleted,
+          profileLinks: profileInfo.links,
+          studentRollNumber: student ? student.rollNumber : studentUser!.studentRollNumber || studentUser!.username,
+          studentDetails: student || null
+        }
+      });
+    }
+  } catch (authErr: any) {
+    console.error("[AUTH CRITICAL EXCEPTION]", authErr);
+    return res.status(500).json({
+      success: false,
+      error: "Authentication service temporarily unavailable"
     });
   }
 });
@@ -9004,6 +9132,15 @@ app.post("/api/firebase/sync", async (req, res) => {
 // 404 handler for unmatched API routes to ensure JSON response instead of HTML fallback
 app.all("/api/*", (req, res) => {
   res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
+});
+
+// Global API error handler ensuring structured JSON on any uncaught exception
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error("[GLOBAL API ERROR]", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(500).json({ error: err?.message || "Internal server error" });
 });
 
 // ============================================================================
