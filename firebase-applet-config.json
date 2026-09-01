@@ -1,12 +1,12 @@
 {
   "projectId": "scmain-b2cde",
-  "appId": "1:1096271363191:web:2fb11e22ce1004b8751a72",
-  "apiKey": "AIzaSyD3Si68NVCLiU0DUXMMWhccbh_bgbXQneY",
+  "appId": "1:781407518974:web:bbf038a759e20c918aa5af",
+  "apiKey": "AIzaSyAu8BM2KDpOa8dbqbpBjPN-wYotj3r6VjU",
   "authDomain": "scmain-b2cde.firebaseapp.com",
   "firestoreDatabaseId": "(default)",
   "storageBucket": "scmain-b2cde.firebasestorage.app",
-  "messagingSenderId": "1096271363191",
-  "measurementId": "",
+  "messagingSenderId": "781407518974",
+  "measurementId": "G-EM9YG7FV6K",
   "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

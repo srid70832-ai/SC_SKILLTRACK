@@ -31,12 +31,13 @@ const getEnvVar = (key: string): string | undefined => {
 };
 
 export const firebaseConfig = {
-  apiKey: getEnvVar('FIREBASE_API_KEY') || firebaseConfigData.apiKey,
+  apiKey: getEnvVar('FIREBASE_API_KEY') || firebaseConfigData.apiKey || 'AIzaSyAu8BM2KDpOa8dbqbpBjPN-wYotj3r6VjU',
   authDomain: getEnvVar('FIREBASE_AUTH_DOMAIN') || firebaseConfigData.authDomain || 'scmain-b2cde.firebaseapp.com',
   projectId: getEnvVar('FIREBASE_PROJECT_ID') || firebaseConfigData.projectId || 'scmain-b2cde',
   storageBucket: getEnvVar('FIREBASE_STORAGE_BUCKET') || firebaseConfigData.storageBucket || 'scmain-b2cde.firebasestorage.app',
-  messagingSenderId: getEnvVar('FIREBASE_MESSAGING_SENDER_ID') || firebaseConfigData.messagingSenderId || '1096271363191',
-  appId: getEnvVar('FIREBASE_APP_ID') || firebaseConfigData.appId || '1:1096271363191:web:2fb11e22ce1004b8751a72',
+  messagingSenderId: getEnvVar('FIREBASE_MESSAGING_SENDER_ID') || firebaseConfigData.messagingSenderId || '781407518974',
+  appId: getEnvVar('FIREBASE_APP_ID') || firebaseConfigData.appId || '1:781407518974:web:bbf038a759e20c918aa5af',
+  measurementId: getEnvVar('FIREBASE_MEASUREMENT_ID') || firebaseConfigData.measurementId || 'G-EM9YG7FV6K',
   firestoreDatabaseId: getEnvVar('FIREBASE_DATABASE_ID') || firebaseConfigData.firestoreDatabaseId || '(default)'
 };
 
@@ -54,7 +55,8 @@ export function getFirebaseApp(): FirebaseApp {
         projectId: firebaseConfig.projectId,
         storageBucket: firebaseConfig.storageBucket,
         messagingSenderId: firebaseConfig.messagingSenderId,
-        appId: firebaseConfig.appId
+        appId: firebaseConfig.appId,
+        ...(firebaseConfig.measurementId ? { measurementId: firebaseConfig.measurementId } : {})
       });
     }
   }
