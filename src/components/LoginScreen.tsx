@@ -830,7 +830,7 @@ async function safeApiCall<T = any>(url: string, options: RequestInit): Promise<
                       ? 'border-cyan-400 ring-4 ring-cyan-500/20 shadow-lg shadow-cyan-500/10'
                       : 'border-white/10 hover:border-white/20'
                   }`}
-                  placeholder={loginType === 'student' ? "Enter Account Password" : "Enter Staff Password"}
+                  placeholder={loginType === 'student' ? "Enter Password (Default: KIT@2026)" : "Enter Staff Password"}
                   required
                 />
 

@@ -31,10 +31,17 @@ const hashPassword = (password: string): string => {
   return crypto.createHash("sha256").update(password + "_sctech_salt_2026").digest("hex");
 };
 
-const verifyPassword = (inputPassword: string, storedHash: string, isPasswordChanged?: boolean): boolean => {
-  if (!storedHash || !inputPassword) return false;
+const verifyPassword = (inputPassword: string, storedHash?: string, isPasswordChanged?: boolean): boolean => {
+  if (!inputPassword) return false;
   
   const cleanInput = inputPassword.trim();
+
+  // If student account has not changed password yet, default "KIT@2026" (case-insensitive) is ALWAYS valid
+  if (isPasswordChanged !== true && cleanInput.toUpperCase() === "KIT@2026") {
+    return true;
+  }
+
+  if (!storedHash) return false;
 
   // Primary salted SHA-256 check
   if (storedHash === hashPassword(cleanInput)) return true;
@@ -53,11 +60,6 @@ const verifyPassword = (inputPassword: string, storedHash: string, isPasswordCha
 
   // Legacy plain text fallback
   if (storedHash === cleanInput || storedHash === inputPassword) return true;
-
-  // Default password fallback for unchanged student accounts
-  if (isPasswordChanged !== true && cleanInput.toUpperCase() === "KIT@2026") {
-    return true;
-  }
 
   return false;
 };
@@ -80,12 +82,15 @@ app.get("/health", (req, res) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Safe body fallback middleware for serverless / proxy environments
+// Safe body fallback and URL normalization middleware for serverless / proxy environments
 app.use((req, res, next) => {
   if (req.body && typeof req.body === 'string') {
     try {
       req.body = JSON.parse(req.body);
     } catch (e) {}
+  }
+  if (req.url && !req.url.startsWith('/api') && !req.url.startsWith('/health')) {
+    req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
   }
   next();
 });
@@ -994,7 +999,7 @@ function parseRequestBody(req: express.Request): any {
 }
 
 // 1. Authentication API (Staff & Student with Strict Role Isolation)
-app.all("/api/auth/login", async (req, res) => {
+app.all(["/api/auth/login", "/auth/login"], async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {
