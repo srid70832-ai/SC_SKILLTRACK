@@ -959,55 +959,35 @@ function getStudentProfileLinks(db: DbSchema, identifier: string) {
 // API ROUTES
 // ============================================================================
 
-// Helper function to safely extract and parse request body in any environment
-async function parseRequestBody(req: express.Request): Promise<any> {
-  // If req.body is already an object
-  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
-    return req.body;
-  }
-
-  // If req.body is a string
-  if (typeof req.body === 'string') {
-    const trimmed = req.body.trim();
-    if (!trimmed) return {};
-    try {
-      return JSON.parse(trimmed);
-    } catch (e) {
-      throw new Error("MALFORMED_JSON");
+// Helper function to safely extract and parse request body in any environment without hanging
+function parseRequestBody(req: express.Request): any {
+  if (req.body) {
+    // If req.body is already an object
+    if (typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+      return req.body;
     }
-  }
 
-  // If req.body is a Buffer
-  if (Buffer.isBuffer(req.body)) {
-    const str = req.body.toString('utf-8').trim();
-    if (!str) return {};
-    try {
-      return JSON.parse(str);
-    } catch (e) {
-      throw new Error("MALFORMED_JSON");
+    // If req.body is a string
+    if (typeof req.body === 'string') {
+      const trimmed = req.body.trim();
+      if (!trimmed) return {};
+      try {
+        return JSON.parse(trimmed);
+      } catch (e) {
+        throw new Error("MALFORMED_JSON");
+      }
     }
-  }
 
-  // If req stream is available and unread
-  if (typeof req.on === 'function' && !req.readableEnded) {
-    return new Promise((resolve, reject) => {
-      let data = '';
-      req.on('data', (chunk: any) => {
-        data += chunk;
-      });
-      req.on('end', () => {
-        const trimmed = data.trim();
-        if (!trimmed) return resolve({});
-        try {
-          resolve(JSON.parse(trimmed));
-        } catch (e) {
-          reject(new Error("MALFORMED_JSON"));
-        }
-      });
-      req.on('error', (err: any) => {
-        reject(err);
-      });
-    });
+    // If req.body is a Buffer
+    if (Buffer.isBuffer(req.body)) {
+      const str = req.body.toString('utf-8').trim();
+      if (!str) return {};
+      try {
+        return JSON.parse(str);
+      } catch (e) {
+        throw new Error("MALFORMED_JSON");
+      }
+    }
   }
 
   return {};
